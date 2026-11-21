@@ -1,6 +1,6 @@
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const iso=d=>new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10),today=()=>iso(new Date());
-const KEY='gaintrack_v1';let S,cur=today(),view='tracker',ref=null,snap=null,tt,rt,ch,anim=0,obs=null,pendName='';
+const KEY='gaintrack_v1';let S,cur=today(),view='tracker',ref=null,snap=null,tt,rt,ch,anim=0,obs=null,pendName='',wkOpen=false;
 window.OneSignalDeferred=window.OneSignalDeferred||[];
 if(CFG.onesignalAppId)OneSignalDeferred.push(O=>O.init({appId:CFG.onesignalAppId,serviceWorkerPath:'sw.js',serviceWorkerParam:{scope:location.pathname.replace(/[^/]*$/,'')}}));
 const blank=()=>({v:1,cfg:null,days:{},weights:[],body:[],lastBackup:Date.now(),prof:{name:'',photo:''}});
@@ -29,25 +29,39 @@ function undo(){if(snap){S=JSON.parse(snap);snap=null;save();render();$('#toast'
 const go=k=>{view=k;anim=1;render()};
 const TITLE={profile:'Profilku',tracker:'Tracker',weigh:'Log Penimbangan',body:'Body Measurement',hyd:'Hydration',sleep:'Sleep Quality',game:'Motivasi'};
 // ---------- views
-function vTracker(){const d=D(),ok=d.n.c&&d.n.d?.trim();
- const meal=(k,l)=>`<label class=row><input type=checkbox ${d[k].c?'checked':''} onchange="upd(()=>D().${k}.c=this.checked)"> ${l}</label><input placeholder="Menu ${l.toLowerCase()}" value="${esc(d[k].d)}" onchange="upd(()=>D().${k}.d=this.value)">`;
- const SN=['Susu Full Cream','Roti gandum','Biskuit gandum','Roti kacang','Roti tawar kacang'];
- return`<input type=date value=${cur} max=${today()} onchange="cur=this.value||today();render()">${cur==today()?alerts().map(a=>`<div class=alert>${a}</div>`).join(''):''}
-<details open><summary>Bagian Penting</summary>
-${meal('b','Sarapan')}
-<b>Makan Siang (MBG)</b><select onchange="upd(()=>D().l.s=this.value)">${[['','Pilih status…'],['Habis','Habis'],['Ambil lauk/ayam saja','Ambil lauk/ayamnya saja'],['Tidak dimakan','Tidak dimakan']].map(([v,t])=>`<option value="${v}" ${d.l.s==v||(!d.l.s&&!v)?'selected':''}>${t}</option>`).join('')}</select>
-<input placeholder="Menu makan siang" value="${esc(d.l.d)}" onchange="upd(()=>D().l.d=this.value)">
-${meal('n','Makan Malam')}
-${d.done?`<p>✅ Laporan hari ini sudah disubmit.</p><button class=alt onclick="upd(()=>D().done=false)">Buka lagi untuk edit</button>`:`<button ${ok?'':'disabled'} onclick="upd(()=>D().done=true,'Laporan terkirim, +50 XP')">Submit Harian</button><small>Submit aktif setelah Makan Malam dicentang dan diisi. Catatan pagi & siang tersimpan sebagai draft.</small>`}
-<h4>Susu & camilan padat gizi</h4><div class=chips>${SN.map(s=>`<button class="${d.milk.includes(s)?'on':''}" onclick="upd(()=>{const m=D().milk,i=m.indexOf('${s}');i<0?m.push('${s}'):m.splice(i,1)})">${s}</button>`).join('')}</div>
-<input placeholder="Camilan sehat lain (ketik)" value="${esc(d.extra)}" onchange="upd(()=>D().extra=this.value)">
-<h4>Guardian Check</h4><div class=row><button class="${d.junk.y===false?'':'alt'}" onclick="upd(()=>D().junk={y:false})">✓ Tidak junk food</button><button class="${d.junk.y?'bad':'alt'}" onclick="upd(()=>D().junk={y:true,t:''})">✕ Makan junk food</button></div>
-${d.junk.y?`<input list=jl placeholder="Jenis junk food" value="${esc(d.junk.t)}" onchange="upd(()=>D().junk.t=this.value)"><datalist id=jl><option>Cilok<option>Cireng<option>Mi pedas/instan</datalist>`:''}
-</details>
-<details><summary>Workout (3x seminggu)</summary><p class=note>Push-up 3 set + Squat 3 set, 10–15 menit.</p>
-${[['p','Push-up'],['s','Squat']].map(([k,l])=>`<div class=row><b style="flex:1">${l}: ${d.wo[k]}/3 set</b><button onclick="upd(()=>D().wo.${k}=Math.min(3,D().wo.${k}+1))">+ set</button></div>`).join('')}
-<button class=alt id=rest onclick="rest()">⏱ Istirahat 60 dtk</button>
-${d.wo.done?'<p>✅ Sesi hari ini selesai</p>':`<button ${d.wo.p>=3&&d.wo.s>=3?'':'disabled'} onclick="upd(()=>D().wo.done=true,'Workout selesai, +30 XP')">Selesaikan sesi</button>`}</details>`}
+const LS=[['Habis','🍽️ Habis'],['Ambil lauk/ayam saja','🍗 Lauk saja'],['Tidak dimakan','🚫 Tidak']],SN2=['Susu Full Cream','Roti gandum','Biskuit gandum','Roti kacang','Roti tawar kacang'];
+function shiftDay(n){const d=new Date(cur+'T00:00:00');d.setDate(d.getDate()+n);const k=iso(d);if(k<=today()){cur=k;render()}}
+function dayLabel(){const t=new Date(cur+'T00:00:00'),df=Math.round((new Date(today()+'T00:00:00')-t)/864e5);
+ return[df==0?'Hari ini':df==1?'Kemarin':t.toLocaleDateString('id-ID',{weekday:'long'}),t.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})]}
+function vTracker(){const d=D(),ok=d.n.c&&d.n.d?.trim(),[dl,dd]=dayLabel(),nm=(P().name||'').split(' ')[0],isT=cur==today(),
+ lOn=d.l.s&&d.l.s!=='Tidak dimakan',ws=d.wo.p+d.wo.s,wl=water(d),
+ bar=(a,b)=>`<div class=bar style="--w:${Math.round(Math.min(1,a/b)*100)}%"><i></i></div>`,
+ meal=(k,ic,l,ph,i)=>`<div class="meal fu ${d[k].c?'ok':''}" style="--i:${i}"><div class=mh><span class=mic>${ic}</span><div class=stx><b>${l}</b><small>${d[k].c?'Sudah dimakan':'Belum dimakan'}</small></div><button class="ck ${d[k].c?'on':''}" aria-label="Tandai ${l}" onclick="upd(()=>D().${k}.c=!D().${k}.c)">✓</button></div><input placeholder="${ph}" value="${esc(d[k].d)}" autocomplete=off enterkeyhint=done onchange="upd(()=>D().${k}.d=this.value)"></div>`;
+ return`<div class="dbar fu" style="--i:0"><button class=nav onclick="shiftDay(-1)" aria-label="Hari sebelumnya">‹</button>
+<label class=dlabel><small>${dl}</small><b>${dd}</b><input type=date value="${cur}" max="${today()}" onchange="cur=this.value||today();render()"></label>
+<button class=nav onclick="shiftDay(1)" aria-label="Hari berikutnya" ${isT?'disabled':''}>›</button></div>
+<div class="hero fu" style="--i:1"><h3>${isT?`Halo${nm?', '+esc(nm):''} 👋`:'Catatan harian'}</h3><div class=sub>🔥 Streak ${streak()} hari · ${xp()} XP</div>
+<div class=hs><div><small>🍽️ Makan</small><b>${mealsN(d)}/3</b>${bar(mealsN(d),3)}</div><div><small>💧 Air</small><b>${(wl/1000).toFixed(1)} L</b>${bar(wl,hyd())}</div><div><small>💪 Workout</small><b>${d.wo.done?'Selesai':ws+'/6 set'}</b>${bar(d.wo.done?6:ws,6)}</div></div></div>
+${isT?alerts().map(a=>`<div class="alert fu" style="--i:2">${a}</div>`).join(''):''}
+<h4 class="sec pad fu" style="--i:2">Makan hari ini</h4>
+${meal('b','🌅','Sarapan','Menu sarapan',3)}
+<div class="meal fu ${lOn?'ok':''}" style="--i:4"><div class=mh><span class=mic>🍱</span><div class=stx><b>Makan Siang (MBG)</b><small>${d.l.s?esc((LS.find(x=>x[0]==d.l.s)||[0,d.l.s])[1]):'Pilih status makan siang'}</small></div><span class="ck static ${lOn?'on':''}">✓</span></div>
+<div class=seg>${LS.map(([v,t],i)=>`<button class="${d.l.s==v?'on':''}" onclick="upd(()=>{const l=D().l;l.s=l.s==LS[${i}][0]?'':LS[${i}][0]})">${t}</button>`).join('')}</div>
+<input placeholder="Menu makan siang" value="${esc(d.l.d)}" autocomplete=off enterkeyhint=done onchange="upd(()=>D().l.d=this.value)"></div>
+${meal('n','🌙','Makan Malam','Menu makan malam',5)}
+<div class="fu" style="--i:6">${d.done?`<div class=done><span>✅</span><div><b>Laporan hari ini terkirim</b><small>Kerja bagus, konsisten itu kuncinya!</small></div></div><button class=btn2 style="width:100%" onclick="upd(()=>D().done=false)">Buka lagi untuk edit</button>`
+ :`<button class=cta ${ok?'':'disabled'} onclick="upd(()=>D().done=true,'Laporan terkirim, +50 XP')">Submit Harian · +50 XP</button><small class=hint>${ok?'Semua siap, tinggal kirim!':'Aktif setelah Makan Malam dicentang dan menunya diisi. Catatan lain tersimpan sebagai draft.'}</small>`}</div>
+<h4 class="sec pad fu" style="--i:7">Susu & camilan padat gizi</h4>
+<div class="card fu" style="--i:7"><div class=chips>${SN2.map((x,i)=>`<button class="${d.milk.includes(x)?'on':''}" onclick="upd(()=>{const m=D().milk,i=m.indexOf(SN2[${i}]);i<0?m.push(SN2[${i}]):m.splice(i,1)})">${x}</button>`).join('')}</div>
+<input name=camilan_lain placeholder="Camilan sehat lain (ketik)" value="${esc(d.extra)}" autocomplete=off enterkeyhint=done onchange="upd(()=>D().extra=this.value)"></div>
+<h4 class="sec pad fu" style="--i:8">Guardian Check</h4>
+<div class="card fu" style="--i:8"><div class=gd><button class="gopt ${d.junk.y===false?'good':''}" onclick="upd(()=>D().junk={y:false})"><span>🛡️</span>Tidak junk food</button><button class="gopt ${d.junk.y?'badc':''}" onclick="upd(()=>D().junk={y:true,t:''})"><span>🍟</span>Makan junk food</button></div>
+${d.junk.y?`<input list=jl name=junk_jenis placeholder="Jenis junk food" value="${esc(d.junk.t)}" autocomplete=off onchange="upd(()=>D().junk.t=this.value)"><datalist id=jl><option>Cilok<option>Cireng<option>Mi pedas/instan</datalist>`:''}</div>
+<details class="wk fu" style="--i:9" ${wkOpen?'open':''} ontoggle="wkOpen=this.open"><summary><span class=mic>💪</span><div class=stx><b>Workout (3x seminggu)</b><small>${d.wo.done?'Sesi selesai ✅':`Push-up ${d.wo.p}/3 · Squat ${d.wo.s}/3`}</small></div></summary>
+<p class=note>Push-up 3 set + Squat 3 set, 10–15 menit.</p>
+${[['p','Push-up'],['s','Squat']].map(([k,l])=>`<div class=ex><div class=stx><b>${l}</b><div class=dots>${[0,1,2].map(i=>`<i class="dot ${i<d.wo[k]?'on':''}"></i>`).join('')}</div></div><button class="sm ghost" ${d.wo[k]>=3?'disabled':''} onclick="upd(()=>D().wo.${k}=Math.min(3,D().wo.${k}+1))">+ set</button></div>`).join('')}
+<button class=btn2 style="width:100%" id=rest onclick="rest()">⏱ Istirahat 60 dtk</button>
+${d.wo.done?'<div class=done><span>✅</span><div><b>Sesi hari ini selesai</b></div></div>':`<button class=cta ${d.wo.p>=3&&d.wo.s>=3?'':'disabled'} onclick="upd(()=>D().wo.done=true,'Workout selesai, +30 XP')">Selesaikan sesi · +30 XP</button>`}</details>`}
 function rest(){let n=60;clearInterval(rt);rt=setInterval(()=>{n--;const b=$('#rest');if(b)b.textContent=n>0?`⏱ ${n} dtk`:'Lanjut set berikutnya!';if(n<=0){clearInterval(rt);navigator.vibrate?.(300)}},1000)}
 const CND=['Badan lebih bertenaga','Pipi aman / tidak sembap','Massa tubuh terasa lebih padat'];
 function vWeigh(){const w=S.weights;return`<div class=card><div class=alert>Timbang pagi hari saat bangun, sebelum makan atau minum.</div>
@@ -157,7 +171,7 @@ function vProfile(){const c=S.cfg,w=curW(),b=+bmi(),st=b<18.5?['Kurus','low']:b<
 <div class="card pc fu" style="--i:7"><h4 class=sec>Data & cadangan</h4><div class=row><button class=btn2 onclick="exp()">⬇️ Ekspor JSON</button><label class=btn2>⬆️ Impor JSON<input type=file accept=.json hidden onchange="imp(this.files[0]);this.value=''"></label></div></div>
 ${ref?'<button class="exit fu" style="--i:8" onclick="confirmOut()">Keluar Akun</button>':''}`}
 // ---------- core
-function render(){if(!S.cfg)return onboard();theme();$('#menu').hidden=true;$('#main').className=anim&&view=='profile'?'enter':'';anim=0;$('#title').textContent=TITLE[view];$('#main').innerHTML=({profile:vProfile,tracker:vTracker,weigh:vWeigh,body:vBody,hyd:vHyd,sleep:vSleep,game:vGame})[view]();
+function render(){if(!S.cfg)return onboard();theme();$('#menu').hidden=true;$('#main').className=anim&&(view=='profile'||view=='tracker')?'enter':'';anim=0;$('#title').textContent=TITLE[view];$('#main').innerHTML=({profile:vProfile,tracker:vTracker,weigh:vWeigh,body:vBody,hyd:vHyd,sleep:vSleep,game:vGame})[view]();
  if(view=='weigh')chart(S.weights.map(x=>x.d.slice(5)),S.weights.map(x=>x.w),'Berat (kg)');if(view=='hyd')chart(last(7).map(k=>k.slice(5)),last(7).map(k=>water(S.days[k]||{})),'Air (ml)')}
 function chart(l,d,lb){if(ch)ch.destroy();const c=$('#c');if(c&&window.Chart)ch=new Chart(c,{type:'line',data:{labels:l,datasets:[{label:lb,data:d,tension:.3,borderColor:'#0f766e'}]}})}
 const theme=()=>document.body.classList.toggle('dark',!!S.cfg?.dark);
@@ -178,7 +192,7 @@ function exp(){S.lastBackup=Date.now();save();const a=document.createElement('a'
 function imp(f){if(!f)return;const r=new FileReader();r.onload=()=>{try{const j=JSON.parse(r.result);if(j.schema!==1||!j.data)throw 0;const old=S.prof;S=j.data;if(!S.prof?.name&&!S.prof?.photo)S.prof=old;save();render();toast('Impor berhasil')}catch{toast('File backup tidak valid')}};r.readAsText(f)}
 function authUI(m=0){$('#main').innerHTML=`<div class="card auth"><h2>${m?'Buat akun baru':'Masuk'}</h2><p class=note>Akun yang sama dipakai di semua perangkat.</p>${m?'<input id=nm0 maxlength=40 placeholder="Nama lengkap / panggilan" autocomplete=name>':''}<input id=em type=email placeholder=Email autocomplete=email><input id=pw type=password placeholder="Password (min. 6)" autocomplete="${m?'new-password':'current-password'}"><button onclick="auth(${m})">${m?'Daftar':'Masuk'}</button><button class=alt onclick="authUI(${m?0:1})">${m?'Sudah punya akun? Masuk':'Daftar akun baru'}</button></div>`}
 async function auth(n){const a=firebase.auth(),e=$('#em').value,p=$('#pw').value,nm=n?$('#nm0').value.trim():'';if(n&&!nm)return toast('Isi nama dulu');pendName=nm;try{await(n?a.createUserWithEmailAndPassword(e,p):a.signInWithEmailAndPassword(e,p))}catch(x){pendName='';toast(x.message)}}
-function start(){$('#menu').innerHTML=Object.entries(TITLE).map(([k,l])=>`<button onclick="go('${k}')">${l}</button>`).join('');if(S.cfg?.pin)$('#lock').hidden=false;render()}
+function start(){$('#menu').innerHTML=Object.entries(TITLE).map(([k,l])=>`<button onclick="go('${k}')">${l}</button>`).join('');if(S.cfg?.pin)$('#lock').hidden=false;anim=1;render()}
 function boot(){const l=localStorage.getItem(KEY);S=l?JSON.parse(l):blank();
  if(window.firebase&&CFG.firebase.apiKey){firebase.initializeApp(CFG.firebase);const db=firebase.firestore();db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
   firebase.auth().onAuthStateChanged(async u=>{if(!u){$('#lock').hidden=true;return authUI()}ref=db.doc('users/'+u.uid);
