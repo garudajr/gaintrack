@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="style.css"></head><body>
 <header><b id="title">GainTrack</b><button onclick="$('#menu').hidden=!$('#menu').hidden" aria-label="Menu">⋮</button></header>
 <nav id="menu" hidden></nav><main id="main"></main><div id="toast" hidden></div>
+<div id="modal" hidden onclick="if(event.target===this)closeModal()"></div>
+<input type="file" id="fcam" accept="image/*" capture="user" hidden onchange="gotPhoto(this)"><input type="file" id="fgal" accept="image/*" hidden onchange="gotPhoto(this)">
 <div id="lock" hidden><div class="card"><h2>🔒 GainTrack</h2><input id="pin" type="password" inputmode="numeric" placeholder="PIN"><button onclick="unlock()">Buka</button></div></div>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>

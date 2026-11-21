@@ -1,9 +1,9 @@
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const iso=d=>new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10),today=()=>iso(new Date());
-const KEY='gaintrack_v1';let S,cur=today(),view='tracker',ref=null,snap=null,tt,rt,ch,user=null,pendingName='',obGo=false,anim=false;
+const KEY='gaintrack_v1';let S,cur=today(),view='tracker',ref=null,snap=null,tt,rt,ch,anim=0,obs=null,pendName='';
 window.OneSignalDeferred=window.OneSignalDeferred||[];
 if(CFG.onesignalAppId)OneSignalDeferred.push(O=>O.init({appId:CFG.onesignalAppId,serviceWorkerPath:'sw.js',serviceWorkerParam:{scope:location.pathname.replace(/[^/]*$/,'')}}));
-const blank=()=>({v:1,cfg:null,days:{},weights:[],body:[],lastBackup:Date.now()});
+const blank=()=>({v:1,cfg:null,days:{},weights:[],body:[],lastBackup:Date.now(),prof:{name:'',photo:''}});
 const D=()=>S.days[cur]||={b:{},l:{},n:{},milk:[],junk:{},water:[],wo:{p:0,s:0},sl:{}};
 const water=d=>(d.water||[]).reduce((a,x)=>a+x.ml,0),hyd=()=>S.cfg.hyd||2000;
 const curW=()=>S.weights.at(-1)?.w??S.cfg.w0,bmi=()=>(curW()/((S.cfg.h/100)**2)).toFixed(1);
@@ -26,7 +26,7 @@ function save(){localStorage.setItem(KEY,JSON.stringify(S));if(ref)ref.set(JSON.
 function upd(fn,msg='Tersimpan'){snap=JSON.stringify(S);fn();save();render();toast(msg,1)}
 function toast(m,u){const t=$('#toast');t.innerHTML=`<span>${m}</span>`+(u?'<button onclick="undo()">Undo</button>':'');t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,4500)}
 function undo(){if(snap){S=JSON.parse(snap);snap=null;save();render();$('#toast').hidden=true}}
-const go=k=>{view=k;anim=k=='profile';render()};
+const go=k=>{view=k;anim=1;render()};
 const TITLE={profile:'Profilku',tracker:'Tracker',weigh:'Log Penimbangan',body:'Body Measurement',hyd:'Hydration',sleep:'Sleep Quality',game:'Motivasi'};
 // ---------- views
 function vTracker(){const d=D(),ok=d.n.c&&d.n.d?.trim();
@@ -75,66 +75,115 @@ function vGame(){const x=xp(),w=last(7),milk=w.filter(k=>S.days[k]?.milk?.includ
 <div class=card><b>Lencana</b>${badges().map(([e,n,ok])=>`<div style="opacity:${ok?1:.35}">${e} ${n}</div>`).join('')}</div>
 <div class=card><b>Kepatuhan 35 hari</b><div class=heat>${last(35).map(k=>`<i class="hm l${Math.min(4,S.days[k]?mealsN(S.days[k])+(S.days[k].done?1:0):0)}" title=${k}></i>`).join('')}</div></div>
 <div class=card><b>Personal Best</b><p>Streak terpanjang: ${bestStreak()} hari<br>Rekor minum: ${pw} ml</p></div>`}
-// ---------- profilku
-const nm=()=>S.profile?.name||user?.email?.split('@')[0]||'Pengguna';
-const ava=()=>S.profile?.photo?`<img src="${esc(S.profile.photo)}" alt="Foto profil">`:`<span>${esc((nm().trim()[0]||'?').toUpperCase())}</span>`;
-const bmiLbl=b=>b<18.5?'Kurang':b<25?'Normal':b<30?'Berlebih':'Obesitas';
-const nOn=()=>typeof Notification!=='undefined'&&Notification.permission==='granted';
-const PEN='<svg width=16 height=16 viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-const CHK='<svg width=16 height=16 viewBox="0 0 24 24"><path class=ck d="M5 12l5 5 9-10" fill=none stroke=currentColor stroke-width=3 stroke-linecap=round stroke-linejoin=round /></svg>';
-function vProfile(){const c=S.cfg,b=+bmi(),cw=curW(),span=c.target-c.w0,pr=span>0?Math.max(0,Math.min(100,(cw-c.w0)/span*100)):0,left=c.target-cw;
- return`<div class="hero st" style="--i:0"><div class=ava-wrap><div class=ava onclick="photoSheet()">${ava()}</div><button class=cam onclick="photoSheet()" aria-label="Ganti foto">📷</button></div>
-<button class=nm onclick="editName()" aria-label="Ubah nama"><b>${esc(nm())}</b>${PEN}</button><small>${esc(user?.email||'Mode lokal (tanpa akun)')}</small></div>
-<div class=grid3><div class="stat st" style="--i:1"><small>Tinggi</small><b>${c.h}</b><small>cm</small></div>
-<div class="stat st" style="--i:2"><small>Berat Awal</small><b>${c.w0}</b><small>kg</small></div>
-<div class="stat st" style="--i:3"><small>BMI Terkini</small><b>${b}</b><span class=tag>${bmiLbl(b)}</span></div></div>
-<div class=grid2><div class="stat hl st" style="--i:4"><small>🎯 Target Akhir</small><b>${c.target} kg</b><small>${left>0?`Sisa ${left.toFixed(1)} kg lagi`:'🎉 Target tercapai'}</small><div class=bar><i style="--w:${pr.toFixed(0)}%"></i></div></div>
-<div class="stat hl st" style="--i:5"><small>📈 Target / Minggu</small><b>+${c.wk} kg</b><small>kenaikan per minggu</small></div></div>
-<div class="card st" style="--i:6">
-<div class=set><span class=ico>🔔</span><div class=lbl>Notifikasi Pengingat<small>${nOn()?'Pengingat harian aktif':'Dapatkan pengingat mencatat'}</small></div>${nOn()?`<span class=pill>${CHK}Aktif</span>`:'<button class=mini onclick="notif()">Aktifkan</button>'}</div>
-<div class=set><span class=ico>🌓</span><div class=lbl>Mode Gelap<small>Ganti tampilan terang / gelap</small></div><button class="sw${c.dark?' on':''}" role=switch aria-checked="${!!c.dark}" aria-label="Mode gelap" onclick="toggleDark(this)"><span class=knob><i class=sun>☀️</i><i class=moon>🌙</i></span></button></div>
-<div class=set><span class=ico id=lk>${c.pin?'🔒':'🔓'}</span><div class=lbl>Kunci PIN<small>${c.pin?'PIN Aktif':'Belum diatur'}</small></div>${c.pin?'<div class=acts><button class="mini alt" onclick="togglePin()">Ubah</button><button class="mini ghost" onclick="offPin()">Matikan</button></div>':'<button class=mini onclick="togglePin()">Atur PIN</button>'}</div>
-<div class=acc id=acc><div><input id=np type=password inputmode=numeric pattern="[0-9]*" maxlength=6 autocomplete=off placeholder="PIN 4–6 digit"><button id=pb onclick="setPin()">${c.pin?'Simpan PIN Baru':'Aktifkan PIN'}</button></div></div></div>
-<div class="card st" style="--i:7"><div class=row><button class=ghost onclick="exp()">⬇️ Ekspor Backup</button><button class=ghost onclick="$('#fimp').click()">⬆️ Impor Backup</button></div><input id=fimp type=file accept=.json hidden onchange="imp(this.files[0])"><small>Backup berformat JSON, aman disimpan di Files / Drive.</small></div>
-${ref?'<button class="soft st" style="--i:8" onclick="askLogout()">Keluar Akun</button>':''}`}
-// modal
-function modal(o){$('#modal')?.remove();const m=document.createElement('div');m.id='modal';m.className='mb';m.innerHTML=`<div class=md role=dialog aria-modal=true>${o.icon?`<div class=mi>${o.icon}</div>`:''}<h3>${o.title}</h3><div class=mt>${o.body||''}</div><div class=mbtn>${o.btns}</div></div>`;m.onclick=e=>{if(e.target===m)closeModal()};document.body.append(m)}
-function closeModal(){const m=$('#modal');if(!m)return;m.classList.add('out');setTimeout(()=>m.remove(),220)}
-function photoSheet(){modal({icon:'📷',title:'Foto Profil',body:'Pilih cara menambahkan fotomu.',btns:`<button onclick="$('#fcam').click()">🤳 Ambil Selfie</button><button class=alt onclick="$('#fgal').click()">🖼️ Pilih dari Galeri</button><button class=ghost onclick="closeModal()">Batal</button>`})}
-function editName(){modal({icon:'✏️',title:'Ubah Nama',body:`<input id=nn maxlength=30 value="${esc(nm())}" placeholder="Nama lengkap / panggilan" autocomplete=name>`,btns:`<button onclick="saveName()">Simpan</button><button class=ghost onclick="closeModal()">Batal</button>`});setTimeout(()=>$('#nn')?.select(),60)}
-function saveName(){const n=$('#nn').value.trim();if(!n)return toast('Nama tidak boleh kosong');S.profile={...S.profile,name:n};save();closeModal();render();toast('Nama diperbarui')}
-// foto: pusat-potong persegi 256px, JPEG ringan (~20-30 KB) agar muat di dokumen Firestore
-function shrink(f,sz=256){return new Promise((ok,no)=>{const u=URL.createObjectURL(f),i=new Image();i.onload=()=>{const m=Math.min(i.width,i.height),c=document.createElement('canvas');c.width=c.height=sz;c.getContext('2d').drawImage(i,(i.width-m)/2,(i.height-m)/2,m,m,0,0,sz,sz);URL.revokeObjectURL(u);ok(c.toDataURL('image/jpeg',.82))};i.onerror=()=>{URL.revokeObjectURL(u);no()};i.src=u})}
-async function pickPhoto(inp){const f=inp.files[0];inp.value='';if(!f)return;try{const d=await shrink(f);S.profile={...S.profile,photo:d};save();closeModal();render();toast('Foto diperbarui')}catch{toast('Foto tidak bisa dibaca, coba foto lain')}}
-function toggleDark(el){S.cfg.dark=!S.cfg.dark;save();theme();el.classList.toggle('on',S.cfg.dark);el.setAttribute('aria-checked',!!S.cfg.dark)}
-function togglePin(){const a=$('#acc');a.classList.toggle('open');if(a.classList.contains('open'))setTimeout(()=>$('#np')?.focus(),320)}
-function offPin(){S.cfg.pin=null;save();render();toast('PIN dimatikan')}
-function askLogout(){modal({icon:'⚠️',title:'Keluar akun?',body:'Yakin ingin keluar akun? Pastikan data sudah tersinkronisasi dan kamu mengingat email serta password untuk masuk kembali.',btns:'<button class=alt onclick="closeModal()">Batal</button><button class=bad onclick="logout()">Ya, Keluar Sekarang</button>'})}
-function logout(){firebase.auth().signOut().then(()=>location.reload())}
+// ---------- profile
+const P=()=>S.prof||={name:'',photo:''},email=()=>window.firebase&&ref?firebase.auth().currentUser?.email||'':'';
+const PEN='<svg width=15 height=15 viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>';
+const CHK='<svg class=chk width=14 height=14 viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=3 stroke-linecap=round stroke-linejoin=round><path d="M5 13l4 4L19 7"/></svg>';
+function avHTML(n=96,ph){const p=P(),ini=esc(([...(p.name||email()||'?').trim()][0]||'?').toUpperCase()),st=`width:${n}px;height:${n}px`;
+ if(p.photo)return`<img class=pimg src="${esc(p.photo)}" alt="Foto profil" style="${st}">`;
+ return`<div class="pimg ini${ph?' ph':''}" style="${st};font-size:${Math.round(n*.42)}px">${ph?'📷':ini}</div>`}
+function headHTML(){const p=P(),e=email();return`<div class=av id=av onclick="photoSheet()">${avHTML()}<button class=cam onclick="photoSheet()" aria-label="Ganti foto profil">📷</button></div>
+<div class=nm id=nmrow><h2>${esc(p.name)||'<span class=note>Tambah nama</span>'}</h2><button class=pen onclick="editName()" aria-label="Ubah nama">${PEN}</button></div>${e?`<small>${esc(e)}</small>`:''}`}
+function refreshHead(){const h=$('#phead');if(h)h.innerHTML=headHTML()}
+function editName(){$('#nmrow').innerHTML=`<input id=nin maxlength=40 value="${esc(P().name)}" placeholder="Nama panggilan" onkeydown="if(event.key==='Enter')saveName();if(event.key==='Escape')refreshHead()"><button class=sm onclick="saveName()">Simpan</button>`;$('#nin').focus()}
+function saveName(){const v=$('#nin').value.trim();if(!v)return toast('Nama tidak boleh kosong');P().name=v;save();if(window.firebase&&ref)firebase.auth().currentUser?.updateProfile({displayName:v}).catch(()=>{});refreshHead();toast('Nama tersimpan')}
+// modal + foto
+function openModal(h,sheet){const m=$('#modal');m.className=sheet?'sheetm':'';m.innerHTML=h;m.hidden=false}
+function closeModal(){const m=$('#modal');if(m.hidden)return;stopCam();m.classList.add('closing');setTimeout(()=>{m.hidden=true;m.className='';m.innerHTML=''},220)}
+const photoSheet=()=>openModal(`<div class="mbox pm"><div class=pmav>${avHTML(112,1)}</div><h3>${esc(P().name)||'Foto profil'}</h3><p class=note>Pilih cara memasang foto wajahmu</p>
+<div class=opt><button class=tile onclick="pickPhoto(1)"><span>📸</span>Ambil Selfie</button><button class=tile onclick="pickPhoto(0)"><span>🖼️</span>Pilih dari Galeri</button></div>${P().photo?'<button class="btn2 dng" onclick="rmPhoto()">Hapus foto</button>':''}<button class=lnk onclick="closeModal()">Tutup</button></div>`);
+function pickPhoto(cam){if(cam)return openCam();$('#fgal').click();closeModal()}
+// kamera selfie di dalam aplikasi
+let cs=null,shot='';
+function stopCam(){cs?.getTracks().forEach(t=>t.stop());cs=null}
+async function openCam(){
+ if(!navigator.mediaDevices?.getUserMedia){closeModal();toast('Kamera tidak didukung, pilih dari galeri');return}
+ shot='';openModal(`<div class="mbox cm"><h3>Ambil selfie</h3><p class=note id=ch>Posisikan wajah di tengah lingkaran</p>
+<div class=ring id=ring><video id=cv playsinline muted autoplay></video><img id=cimg alt="Hasil foto"><div class=flash id=fl></div></div>
+<div class="row camb" id=cb1><button class=btn2 onclick="closeModal();$('#fgal').click()">🖼️ Galeri</button><button class=shut onclick="shoot()" aria-label="Ambil foto"><i></i></button><button class=btn2 onclick="closeModal()">Batal</button></div>
+<div class="row camb" id=cb2 hidden><button class=btn2 onclick="retake()">↺ Ulangi</button><button onclick="useShot()">Pakai Foto ✓</button></div></div>`);
+ try{cs=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:720},height:{ideal:720}},audio:false});const v=$('#cv');if(!v){stopCam();return}v.srcObject=cs;await v.play()}
+ catch{closeModal();toast('Izin kamera ditolak. Pakai "Pilih dari Galeri" ya.')}}
+function shoot(){const v=$('#cv');if(!v||!v.videoWidth)return;const n=256,s=Math.min(v.videoWidth,v.videoHeight),c=document.createElement('canvas');c.width=c.height=n;
+ c.getContext('2d').drawImage(v,(v.videoWidth-s)/2,(v.videoHeight-s)/2,s,s,0,0,n,n);shot=c.toDataURL('image/jpeg',.82);
+ const f=$('#fl');f.classList.remove('go');void f.offsetWidth;f.classList.add('go');navigator.vibrate?.(30);
+ setTimeout(()=>{$('#cimg').src=shot;$('#ring').classList.add('done');$('#cb1').hidden=true;$('#cb2').hidden=false;$('#ch').textContent='Suka hasilnya?'},180)}
+function retake(){shot='';$('#ring').classList.remove('done');$('#cb1').hidden=false;$('#cb2').hidden=true;$('#ch').textContent='Posisikan wajah di tengah lingkaran'}
+function useShot(){if(!shot)return;P().photo=shot;save();closeModal();if(!S.cfg)obPrev();else refreshHead();$('#av,#obav')?.classList.add('pop');toast('Foto diperbarui')}
+// pop-up info kartu statistik
+function infoPop(k){const c=S.cfg,w=curW(),b=+bmi(),h2=(c.h/100)**2;let h;
+ if(k=='bmi'){const m=Math.max(2,Math.min(98,(b-15)/20*100)),st=b<18.5?'Kurus':b<25?'Normal':b<30?'Berlebih':'Obesitas';
+  h=`<div class=wico>⚖️</div><h3>BMI kamu ${b.toFixed(1)}</h3><span class="pill ${b>=18.5&&b<25?'ok':'low'}">${st}</span>
+<div class=scale><i style="left:${m}%"></i><span style="background:#f59e0b"></span><span style="background:#14b8a6"></span><span style="background:#f59e0b"></span><span style="background:#ef4444"></span></div>
+<div class=sl><small>&lt;18.5</small><small>18.5–24.9</small><small>25–29.9</small><small>≥30</small></div>
+<p class=note>Berat normal untuk tinggi ${c.h} cm: <b>${(18.5*h2).toFixed(1)}–${(24.9*h2).toFixed(1)} kg</b>.${b<18.5?`<br>Kamu perlu naik sekitar ${(18.5*h2-w).toFixed(1)} kg untuk masuk rentang normal.`:''}</p>`}
+ else{const pr=c.target>c.w0?Math.max(0,Math.min(100,Math.round((w-c.w0)/(c.target-c.w0)*100))):(w>=c.target?100:0);
+  h=`<div class=wico>🎯</div><h3>${pr}% menuju target</h3><div class=bar2><i style="width:${pr}%"></i></div>
+<div class=sl><small>Awal ${(+c.w0).toFixed(1)} kg</small><small>Kini ${w} kg</small><small>Target ${c.target} kg</small></div><p class=note>${predict()}</p>`}
+ openModal(`<div class=mbox>${h}<button style="margin-top:12px" onclick="closeModal()">Mengerti</button></div>`)}
+function rmPhoto(){P().photo='';save();closeModal();refreshHead();toast('Foto dihapus')}
+// potong persegi di tengah + kecilkan ke 256px agar ringan disimpan di Firestore (~20 KB)
+const squash=(f,n=256)=>new Promise((ok,no)=>{const u=URL.createObjectURL(f),i=new Image();i.onload=()=>{const s=Math.min(i.width,i.height),c=document.createElement('canvas');c.width=c.height=n;c.getContext('2d').drawImage(i,(i.width-s)/2,(i.height-s)/2,s,s,0,0,n,n);URL.revokeObjectURL(u);ok(c.toDataURL('image/jpeg',.82))};i.onerror=()=>no();i.src=u});
+async function gotPhoto(i){const f=i.files[0];i.value='';if(!f)return;
+ try{P().photo=await squash(f);save();if(!S.cfg)obPrev();else refreshHead();$('#av,#obav')?.classList.add('pop');toast('Foto diperbarui')}catch{toast('Foto tidak bisa dibaca, coba foto lain')}}
+// baris pengaturan
+function notifRow(){const st=window.Notification?.permission,on=st==='granted';
+ return`<div class=srow><span class=ico>🔔</span><div class=stx><b>Notifikasi pengingat</b><small>${on?'Pengingat harian aktif':st==='denied'?'Diblokir, ubah di pengaturan browser':'Pengingat makan, minum & timbang'}</small></div>${on?`<span class="pill ok big2">${CHK}Aktif</span>`:st==='denied'?'':'<button class="sm ghost" onclick="notif()">Aktifkan</button>'}</div>`}
+function toggleTheme(b){document.body.classList.add('tt');S.cfg.dark=!S.cfg.dark;save();theme();b.classList.toggle('on',!!S.cfg.dark);b.setAttribute('aria-checked',!!S.cfg.dark);$('#thl').textContent=S.cfg.dark?'Mode gelap':'Mode terang';setTimeout(()=>document.body.classList.remove('tt'),450)}
+function pinBlock(){const on=!!S.cfg.pin;return`<div class=srow><span class=ico id=pinico>${on?'🔒':'🔓'}</span><div class=stx><b>Kunci PIN</b><small>${on?'PIN Aktif':'Lindungi data dengan PIN 4–6 digit'}</small></div><div class=mini>${on?'<button class="sm ghost" onclick="openPin()">Ubah</button><button class="sm ghost bad" onclick="offPin()">Matikan</button>':'<button class="sm ghost" onclick="openPin()">Atur PIN</button>'}</div></div>
+<div class=acc id=acc><div><div class=accin><input id=np type=password inputmode=numeric maxlength=6 autocomplete=new-password placeholder="${on?'PIN baru':'Masukkan PIN'} (4–6 digit)"><button id=pinbtn onclick="setPin()">${on?'Simpan PIN baru':'Aktifkan PIN'}</button></div></div></div>`}
+function openPin(){const a=$('#acc');a.classList.toggle('open');if(a.classList.contains('open'))setTimeout(()=>$('#np')?.focus(),350)}
+async function setPin(){const p=$('#np').value;if(!/^\d{4,6}$/.test(p))return toast('PIN harus 4–6 digit angka');
+ const b=$('#pinbtn');b.disabled=true;S.cfg.pin=await sha(p);save();b.classList.add('pulse');const ic=$('#pinico');ic.textContent='🔒';ic.classList.add('nod');
+ setTimeout(()=>$('#acc').classList.remove('open'),700);setTimeout(()=>{$('#pinbox').innerHTML=pinBlock();toast('PIN aktif')},1100)}
+function offPin(){S.cfg.pin=null;save();$('#pinbox').innerHTML=pinBlock();toast('PIN dimatikan')}
+// keluar akun
+const confirmOut=()=>openModal(`<div class=mbox><div class=wico>⚠️</div><h3>Yakin ingin keluar akun?</h3><p class=note>Pastikan data sudah tersinkronisasi dan kamu mengingat email serta password untuk masuk kembali.</p><div class=row><button class=btn2 onclick="closeModal()">Batal</button><button class=bad id=lo onclick="doLogout()">Ya, Keluar Sekarang</button></div></div>`);
+async function doLogout(){const b=$('#lo');b.disabled=true;b.textContent='Menyinkronkan…';
+ try{await Promise.race([ref.set(JSON.parse(JSON.stringify(S))),new Promise((_,j)=>setTimeout(j,6000))])}
+ catch{b.disabled=false;b.textContent='Ya, Keluar Sekarang';return toast('Data belum tersinkron. Cek koneksi lalu coba lagi.')}
+ localStorage.removeItem(KEY);OneSignalDeferred.push(O=>O.logout?.());await firebase.auth().signOut();location.reload()}
+function vProfile(){const c=S.cfg,w=curW(),b=+bmi(),st=b<18.5?['Kurus','low']:b<25?['Normal','ok']:b<30?['Berlebih','low']:['Obesitas','low'],
+ pr=c.target>c.w0?Math.max(0,Math.min(1,(w-c.w0)/(c.target-c.w0))):(w>=c.target?1:0),left=Math.max(0,c.target-w),dk=!!c.dark;
+ return`<div class="phead fu" id=phead style="--i:0">${headHTML()}</div>
+<div class=g3><div class="stat tap fu" style="--i:1" onclick="toast('Tinggi badan diatur saat pendaftaran')"><small>Tinggi</small><b>${c.h}<span class=u> cm</span></b></div>
+<div class="stat tap fu" style="--i:2" onclick="toast('Berat awal jadi patokan progresmu')"><small>Berat awal</small><b>${(+c.w0).toFixed(1)}<span class=u> kg</span></b></div>
+<div class="stat tap fu" style="--i:3" onclick="infoPop('bmi')"><small>BMI terkini</small><b>${b.toFixed(1)}</b><span class="pill ${st[1]}">${st[0]}</span></div></div>
+<div class=g2><div class="stat hl tap fu" style="--i:4" onclick="infoPop('target')"><small>Target berat akhir</small><b>${c.target}<span class=u> kg</span></b><div class=bar style="--w:${Math.round(pr*100)}%"><i></i></div><small>${left>0?`Kini ${w} kg · sisa ${left.toFixed(1)} kg`:'🎉 Target tercapai'}</small></div>
+<div class="stat hl fu" style="--i:5"><small>Target per minggu</small><b>+${c.wk}<span class=u> kg</span></b><small>naik per minggu</small></div></div>
+<div class="card pc fu" style="--i:6"><h4 class=sec>Pengaturan</h4><div id=nbox>${notifRow()}</div>
+<div class=srow><span class=ico>🎨</span><div class=stx><b>Tampilan</b><small id=thl>${dk?'Mode gelap':'Mode terang'}</small></div><button class="sw${dk?' on':''}" role=switch aria-checked="${dk}" aria-label="Mode gelap" onclick="toggleTheme(this)"><i class=knob><span class=sun>☀️</span><span class=moon>🌙</span></i></button></div>
+<div id=pinbox>${pinBlock()}</div></div>
+<div class="card pc fu" style="--i:7"><h4 class=sec>Data & cadangan</h4><div class=row><button class=btn2 onclick="exp()">⬇️ Ekspor JSON</button><label class=btn2>⬆️ Impor JSON<input type=file accept=.json hidden onchange="imp(this.files[0]);this.value=''"></label></div></div>
+${ref?'<button class="exit fu" style="--i:8" onclick="confirmOut()">Keluar Akun</button>':''}`}
 // ---------- core
-function render(){if(!S.cfg)return onboard();theme();$('#menu').hidden=true;$('#title').textContent=TITLE[view];$('#main').innerHTML=({profile:vProfile,tracker:vTracker,weigh:vWeigh,body:vBody,hyd:vHyd,sleep:vSleep,game:vGame})[view]();$('#main').className=anim?'anim':'';anim=false;
+function render(){if(!S.cfg)return onboard();theme();$('#menu').hidden=true;$('#main').className=anim&&view=='profile'?'enter':'';anim=0;$('#title').textContent=TITLE[view];$('#main').innerHTML=({profile:vProfile,tracker:vTracker,weigh:vWeigh,body:vBody,hyd:vHyd,sleep:vSleep,game:vGame})[view]();
  if(view=='weigh')chart(S.weights.map(x=>x.d.slice(5)),S.weights.map(x=>x.w),'Berat (kg)');if(view=='hyd')chart(last(7).map(k=>k.slice(5)),last(7).map(k=>water(S.days[k]||{})),'Air (ml)')}
 function chart(l,d,lb){if(ch)ch.destroy();const c=$('#c');if(c&&window.Chart)ch=new Chart(c,{type:'line',data:{labels:l,datasets:[{label:lb,data:d,tension:.3,borderColor:'#0f766e'}]}})}
 const theme=()=>document.body.classList.toggle('dark',!!S.cfg?.dark);
-const dots=n=>`<div class=dots>${[1,2,3].map(i=>`<i class="${i<=n?'on':''}"></i>`).join('')}</div>`;
-function onboard(){if(!obGo||!S.profile?.photo)return onbPhoto();onbBody()}
-function onbPhoto(){const p=S.profile?.photo;$('#main').innerHTML=`<div class="card ob">${dots(2)}<h2>Halo, ${esc(nm())}! 👋</h2><p class=note>Satu langkah lagi: tambahkan foto wajahmu sebagai foto profil.</p><div class="ava lg">${ava()}</div><button onclick="$('#fcam').click()">🤳 Ambil Selfie</button><button class=alt onclick="$('#fgal').click()">🖼️ Pilih dari Galeri</button><button ${p?'':'disabled'} onclick="obGo=true;onboard()">Lanjut Isi Data Tubuh →</button></div>`}
-function onbBody(){$('#main').innerHTML=`<div class="card ob">${dots(3)}<h2>Data Tubuh</h2><p class=note>Isi data awal sebagai patokan perhitungan.</p><input id=oh type=number placeholder="Tinggi badan (cm)"><input id=ow type=number step=.1 placeholder="Berat badan awal (kg)"><input id=ot type=number step=.1 placeholder="Target berat akhir (kg)"><label>Target naik per minggu<select id=ok><option>0.25<option>0.5</select></label><button onclick="saveCfg()">Mulai</button></div>`}
+const SN=()=>ref?3:2;
+function onboard(){if(!obs)obs=P().photo?'body':'photo';$('#main').innerHTML=obs=='photo'?obPhoto():obBody()}
+function obPhoto(){const p=P();return`<div class="card ob"><div class=step>Langkah ${SN()-1} dari ${SN()}</div><h2>Tambah foto wajahmu</h2><p class=note>Foto ini tampil di profilmu. Ambil selfie atau pilih dari galeri.</p>
+<div class=obav id=obav>${avHTML(120,1)}</div>${p.name?'':'<input id=on maxlength=40 placeholder="Nama panggilan" autocomplete=nickname>'}
+<div class=row><button onclick="pickPhoto(1)">📷 Ambil Selfie</button><button class=btn2 onclick="pickPhoto(0)">🖼️ Pilih dari Galeri</button></div>
+<button id=obnext ${p.photo?'':'disabled'} onclick="obNext()">Lanjut Isi Data Tubuh</button><button class=lnk onclick="obNext(1)">Lewati dulu</button></div>`}
+function obPrev(){$('#obav').innerHTML=avHTML(120,1);$('#obnext').disabled=!P().photo}
+function obNext(skip){const i=$('#on');if(i){const n=i.value.trim();if(!n)return toast('Isi nama panggilan dulu');P().name=n;save()}if(!skip&&!P().photo)return;obs='body';render()}
+function obBody(){return`<div class=card><div class=step>Langkah ${SN()} dari ${SN()}</div><h2>Halo${P().name?', '+esc(P().name):''}!</h2><p class=note>Isi data awal sebagai patokan perhitungan.</p><input id=oh type=number placeholder="Tinggi badan (cm)"><input id=ow type=number step=.1 placeholder="Berat badan awal (kg)"><input id=ot type=number step=.1 placeholder="Target berat akhir (kg)"><label>Target naik per minggu<select id=ok><option>0.25<option>0.5</select></label><button onclick="saveCfg()">Mulai</button></div>`}
 function saveCfg(){const h=+$('#oh').value,w=+$('#ow').value,t=+$('#ot').value;if(!h||!w||!t)return toast('Lengkapi semua isian');S.cfg={h,w0:w,target:t,wk:+$('#ok').value,hyd:2000};S.weights=[{d:today(),w,c:[]}];save();render()}
 const sha=async s=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))].map(b=>b.toString(16).padStart(2,'0')).join('');
-async function setPin(){const p=$('#np').value;if(!/^\d{4,6}$/.test(p))return toast('PIN harus 4–6 digit angka');const b=$('#pb'),l=$('#lk');b.classList.add('pulse');l.textContent='🔒';l.classList.add('nod');S.cfg.pin=await sha(p);save();setTimeout(()=>{$('#acc')?.classList.remove('open');setTimeout(()=>{if(view=='profile')render();toast('PIN aktif')},320)},650)}
 async function unlock(){if(await sha($('#pin').value)===S.cfg.pin){$('#lock').hidden=true;$('#pin').value=''}else toast('PIN salah')}
-function notif(){if(!CFG.onesignalAppId)return toast('OneSignal belum diisi di config.js');OneSignalDeferred.push(async O=>{await O.Notifications.requestPermission();toast(O.Notifications.permission?'Notifikasi aktif ✅':'Izin ditolak');if(view=='profile')render()})}
+function notif(){if(!CFG.onesignalAppId)return toast('OneSignal belum diisi di config.js');OneSignalDeferred.push(async O=>{await O.Notifications.requestPermission();toast(O.Notifications.permission?'Notifikasi aktif ✅':'Izin ditolak');const b=$('#nbox');if(b)b.innerHTML=notifRow()})}
 function exp(){S.lastBackup=Date.now();save();const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify({schema:1,exportedAt:new Date().toISOString(),data:S})],{type:'application/json'}));a.download='gaintrack-backup-'+today()+'.json';a.click()}
-function imp(f){if(!f)return;const r=new FileReader();r.onload=()=>{try{const j=JSON.parse(r.result);if(j.schema!==1||!j.data)throw 0;const old=S.profile;S=j.data;if(!S.profile&&old)S.profile=old;save();render();toast('Impor berhasil')}catch{toast('File backup tidak valid')}};r.readAsText(f)}
-const AERR={'auth/invalid-credential':'Email atau password salah','auth/wrong-password':'Email atau password salah','auth/user-not-found':'Akun tidak ditemukan','auth/email-already-in-use':'Email sudah terdaftar, silakan masuk','auth/weak-password':'Password minimal 6 karakter','auth/invalid-email':'Format email tidak valid','auth/network-request-failed':'Tidak ada koneksi internet'};
-function authUI(r=false){$('#main').innerHTML=`<div class=card><h2>${r?'Daftar Akun Baru':'Masuk'}</h2><p class=note>Akun yang sama dipakai di semua perangkat.</p>${r?'<input id=an maxlength=30 autocomplete=name placeholder="Nama lengkap / panggilan">':''}<input id=em type=email autocomplete=email placeholder=Email><input id=pw type=password autocomplete="${r?'new-password':'current-password'}" placeholder="Password (min. 6)"><button onclick="auth(${r?1:0})">${r?'Daftar':'Masuk'}</button><button class=alt onclick="authUI(${!r})">${r?'Sudah punya akun? Masuk':'Daftar akun baru'}</button></div>`}
-async function auth(n){const a=firebase.auth(),e=$('#em').value.trim(),p=$('#pw').value,name=n?$('#an').value.trim():'';if(n&&!name)return toast('Isi nama dulu');pendingName=name;try{await(n?a.createUserWithEmailAndPassword(e,p):a.signInWithEmailAndPassword(e,p))}catch(x){pendingName='';toast(AERR[x.code]||x.message)}}
+function imp(f){if(!f)return;const r=new FileReader();r.onload=()=>{try{const j=JSON.parse(r.result);if(j.schema!==1||!j.data)throw 0;const old=S.prof;S=j.data;if(!S.prof?.name&&!S.prof?.photo)S.prof=old;save();render();toast('Impor berhasil')}catch{toast('File backup tidak valid')}};r.readAsText(f)}
+function authUI(m=0){$('#main').innerHTML=`<div class="card auth"><h2>${m?'Buat akun baru':'Masuk'}</h2><p class=note>Akun yang sama dipakai di semua perangkat.</p>${m?'<input id=nm0 maxlength=40 placeholder="Nama lengkap / panggilan" autocomplete=name>':''}<input id=em type=email placeholder=Email autocomplete=email><input id=pw type=password placeholder="Password (min. 6)" autocomplete="${m?'new-password':'current-password'}"><button onclick="auth(${m})">${m?'Daftar':'Masuk'}</button><button class=alt onclick="authUI(${m?0:1})">${m?'Sudah punya akun? Masuk':'Daftar akun baru'}</button></div>`}
+async function auth(n){const a=firebase.auth(),e=$('#em').value,p=$('#pw').value,nm=n?$('#nm0').value.trim():'';if(n&&!nm)return toast('Isi nama dulu');pendName=nm;try{await(n?a.createUserWithEmailAndPassword(e,p):a.signInWithEmailAndPassword(e,p))}catch(x){pendName='';toast(x.message)}}
 function start(){$('#menu').innerHTML=Object.entries(TITLE).map(([k,l])=>`<button onclick="go('${k}')">${l}</button>`).join('');if(S.cfg?.pin)$('#lock').hidden=false;render()}
 function boot(){const l=localStorage.getItem(KEY);S=l?JSON.parse(l):blank();
  if(window.firebase&&CFG.firebase.apiKey){firebase.initializeApp(CFG.firebase);const db=firebase.firestore();db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
-  firebase.auth().onAuthStateChanged(async u=>{if(!u){user=null;$('#lock').hidden=true;return authUI()}user=u;ref=db.doc('users/'+u.uid);
-   try{const s=await ref.get();if(s.exists)S=s.data();else{if(pendingName){S.profile={name:pendingName};pendingName=''}ref.set(JSON.parse(JSON.stringify(S)))}}catch(e){}
+  firebase.auth().onAuthStateChanged(async u=>{if(!u){$('#lock').hidden=true;return authUI()}ref=db.doc('users/'+u.uid);
+   try{const s=await ref.get();if(s.exists)S=s.data();else ref.set(JSON.parse(JSON.stringify(S)))}catch(e){}
+   const pf=P();if(pendName){pf.name=pendName;u.updateProfile({displayName:pendName}).catch(()=>{});pendName='';save()}else if(!pf.name&&u.displayName){pf.name=u.displayName;save()}
    OneSignalDeferred.push(O=>O.login(u.uid));start()})}else start()}
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').then(r=>r.addEventListener('updatefound',()=>{const w=r.installing;w?.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller)toast('Versi baru tersedia <button onclick=location.reload()>Muat ulang</button>')})}));
 boot();
